@@ -1,0 +1,46 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'ENVIRONMENT', choices: ['Staging', 'Production'], description: 'Target environment')
+        string(name: 'BUILD_NUMBER_PARAM', defaultValue: '1', description: 'ECR image tag to deploy')
+    }
+
+    environment {
+        AWS_REGION = 'ap-south-1'
+        ECR_REPO   = '595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management'
+        EC2_HOST   = '3.109.62.241'
+    }
+
+    stages {
+        stage('Pull & Deploy') {
+            steps {
+                sshagent(['ec2-ssh-key']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ec2-user@${EC2_HOST} '
+                            aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${ECR_REPO}
+                            docker pull ${ECR_REPO}:${BUILD_NUMBER_PARAM}
+                            docker stop attendance || true
+                            docker rm attendance || true
+                            docker run -d -p 8081:8081 --name attendance ${ECR_REPO}:${BUILD_NUMBER_PARAM}
+                        '
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            mail to: "${env.BUILD_USER_EMAIL}",
+                 subject: "Deploy #${BUILD_NUMBER_PARAM} to ${ENVIRONMENT} SUCCESS",
+                 body: "Deployment successful on ${EC2_HOST}."
+        }
+        failure {
+            mail to: "${env.BUILD_USER_EMAIL}",
+                 subject: "Deploy to ${ENVIRONMENT} FAILED",
+                 body: "Deployment failed. Check Jenkins: ${BUILD_URL}"
+        }
+    }
+}
