@@ -54,7 +54,8 @@ docker ps
                             icacls "%PEM_FILE%" /remove:g "BUILTIN\\Users"
                             icacls "%PEM_FILE%" /remove:g "NT AUTHORITY\\Authenticated Users"
                             icacls "%PEM_FILE%" /remove:g "Everyone"
-                            icacls "%PEM_FILE%" /grant:r "%USERNAME%:R"
+                            icacls "%PEM_FILE%" /grant:r "NT AUTHORITY\\SYSTEM:R"
+                            icacls "%PEM_FILE%" /grant:r "BUILTIN\\Administrators:R"
 
                             ssh -o StrictHostKeyChecking=no -i "%PEM_FILE%" %EC2_USER%@%EC2_HOST% "mkdir -p /tmp/jenkins-deploy"
                             if errorlevel 1 exit /b 1
