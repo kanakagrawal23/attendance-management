@@ -10,7 +10,7 @@ pipeline {
         AWS_REGION   = 'ap-south-1'
         ECR_REGISTRY = '595365650066.dkr.ecr.ap-south-1.amazonaws.com'
         ECR_REPO     = '595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management'
-        EC2_HOST     = '3.109.62.241'
+        EC2_HOST     = '52.66.188.108'   // replace with the one EC2 you want
         EC2_USER     = 'ec2-user'
         CONTAINER    = 'attendance'
     }
@@ -19,36 +19,29 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 withCredentials([
-                    file(credentialsId: 'ec2-ssh-key', variable: 'PEM_FILE'),
-                    [
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-credentials',
-                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                    ]
+                    file(credentialsId: 'ec2-ssh-key', variable: 'PEM_FILE')
                 ]) {
                     script {
-                        writeFile file: 'deploy.sh', text: '''
+                        writeFile file: 'deploy.sh', text: """
 #!/bin/bash
 set -e
 
 echo "Logging into ECR..."
-aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 595365650066.dkr.ecr.ap-south-1.amazonaws.com
+aws ecr get-login-password --region ${env.AWS_REGION} | docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
 
 echo "Pulling image..."
-docker pull 595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management:'"${BUILD_NUMBER_PARAM}"'
+docker pull ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
 
 echo "Stopping old container if exists..."
-docker stop attendance || true
-docker rm attendance || true
+docker stop ${env.CONTAINER} || true
+docker rm ${env.CONTAINER} || true
 
 echo "Running new container..."
-docker run -d --name attendance --restart unless-stopped -p 8081:8080 595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management:'"${BUILD_NUMBER_PARAM}"'
+docker run -d --name ${env.CONTAINER} --restart unless-stopped -p 8081:8080 ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
 
 echo "Deployment completed."
 docker ps
-'''
-
+"""
                         bat '''
                             icacls "%PEM_FILE%" /inheritance:r
                             icacls "%PEM_FILE%" /remove:g "BUILTIN\\Users"
