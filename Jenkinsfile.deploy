@@ -18,28 +18,49 @@ pipeline {
     stages {
         stage('Deploy to EC2') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-credentials',
-                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                ]]) {
-                    sshagent(credentials: ['ec2-ssh-key']) {
-                        bat """
-                            ssh -o StrictHostKeyChecking=no %EC2_USER%@%EC2_HOST% ^
-                            "aws ecr get-login-password --region %AWS_REGION% ^| docker login --username AWS --password-stdin %ECR_REGISTRY% && ^
-                            docker pull %ECR_REPO%:${params.BUILD_NUMBER_PARAM} && ^
-                            docker stop %CONTAINER% 2>nul || exit /b 0"
-                        """
+                withCredentials([
+                    file(credentialsId: 'ec2-ssh-key', variable: 'PEM_FILE'),
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-credentials',
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]
+                ]) {
+                    script {
+                        writeFile file: 'deploy.sh', text: """#!/bin/bash
+set -e
+
+export AWS_ACCESS_KEY_ID='${env.AWS_ACCESS_KEY_ID}'
+export AWS_SECRET_ACCESS_KEY='${env.AWS_SECRET_ACCESS_KEY}'
+export AWS_DEFAULT_REGION='${env.AWS_REGION}'
+
+echo "Logging into ECR..."
+aws ecr get-login-password --region ${env.AWS_REGION} | docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+
+echo "Pulling image..."
+docker pull ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
+
+echo "Stopping old container if exists..."
+docker stop ${env.CONTAINER} || true
+docker rm ${env.CONTAINER} || true
+
+echo "Running new container..."
+docker run -d --name ${env.CONTAINER} --restart unless-stopped -p 8081:8080 ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
+
+echo "Deployment completed."
+docker ps
+"""
 
                         bat """
-                            ssh -o StrictHostKeyChecking=no %EC2_USER%@%EC2_HOST% ^
-                            "docker rm %CONTAINER% 2>nul || exit /b 0"
-                        """
+                            ssh -o StrictHostKeyChecking=no -i "%PEM_FILE%" %EC2_USER%@%EC2_HOST% "mkdir -p /tmp/jenkins-deploy"
+                            if errorlevel 1 exit /b 1
 
-                        bat """
-                            ssh -o StrictHostKeyChecking=no %EC2_USER%@%EC2_HOST% ^
-                            "docker run -d --name %CONTAINER% --restart unless-stopped -p 8081:8081 %ECR_REPO%:${params.BUILD_NUMBER_PARAM}"
+                            scp -o StrictHostKeyChecking=no -i "%PEM_FILE%" deploy.sh %EC2_USER%@%EC2_HOST%:/tmp/jenkins-deploy/deploy.sh
+                            if errorlevel 1 exit /b 1
+
+                            ssh -o StrictHostKeyChecking=no -i "%PEM_FILE%" %EC2_USER%@%EC2_HOST% "chmod +x /tmp/jenkins-deploy/deploy.sh && bash /tmp/jenkins-deploy/deploy.sh"
+                            if errorlevel 1 exit /b 1
                         """
                     }
                 }
@@ -52,7 +73,7 @@ pipeline {
             echo "========================================="
             echo "DEPLOYMENT SUCCESS"
             echo "Environment : ${params.ENVIRONMENT}"
-            echo "EC2 Host    : ${EC2_HOST}"
+            echo "EC2 Host    : ${env.EC2_HOST}"
             echo "Image Tag   : ${params.BUILD_NUMBER_PARAM}"
             echo "========================================="
         }
@@ -60,9 +81,9 @@ pipeline {
             echo "========================================="
             echo "DEPLOYMENT FAILED"
             echo "Environment : ${params.ENVIRONMENT}"
-            echo "EC2 Host    : ${EC2_HOST}"
+            echo "EC2 Host    : ${env.EC2_HOST}"
             echo "Image Tag   : ${params.BUILD_NUMBER_PARAM}"
-            echo "Console     : ${BUILD_URL}"
+            echo "Console     : ${env.BUILD_URL}"
             echo "========================================="
         }
         always {
