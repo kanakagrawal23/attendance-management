@@ -1,14 +1,11 @@
 pipeline {
     agent any
 
-    options {
-        withBuildUser()
-    }
-
     environment {
         AWS_REGION = 'ap-south-1'
-        ECR_REPO   = '595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management'
-        IMAGE_TAG  = "${BUILD_NUMBER}"
+        ECR_REGISTRY = '595365650066.dkr.ecr.ap-south-1.amazonaws.com'
+        ECR_REPO = '595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management'
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
@@ -26,7 +23,7 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                bat "docker build -t attendance-app:${IMAGE_TAG} ."
+                bat "docker build -t attendance-app:%IMAGE_TAG% ."
             }
         }
 
@@ -40,10 +37,13 @@ pipeline {
                 ]]) {
                     bat """
                         aws ecr get-login-password --region %AWS_REGION% > ecr-login.txt
-                        docker login --username AWS --password-stdin 595365650066.dkr.ecr.ap-south-1.amazonaws.com < ecr-login.txt
+                        docker login --username AWS --password-stdin %ECR_REGISTRY% < ecr-login.txt
 
                         docker tag attendance-app:%IMAGE_TAG% %ECR_REPO%:%IMAGE_TAG%
+                        docker tag attendance-app:%IMAGE_TAG% %ECR_REPO%:latest
+
                         docker push %ECR_REPO%:%IMAGE_TAG%
+                        docker push %ECR_REPO%:latest
 
                         del ecr-login.txt
                     """
@@ -54,26 +54,16 @@ pipeline {
 
     post {
         success {
-            script {
-                if (env.BUILD_USER_EMAIL?.trim()) {
-                    mail to: "${env.BUILD_USER_EMAIL}",
-                         subject: "Build #${BUILD_NUMBER} SUCCESS",
-                         body: "Build passed and image pushed to ECR with tag ${BUILD_NUMBER}."
-                } else {
-                    echo "BUILD_USER_EMAIL is empty, skipping success email."
-                }
-            }
+            echo "========================================="
+            echo "BUILD #${BUILD_NUMBER} SUCCEEDED"
+            echo "Image pushed: ${ECR_REPO}:${IMAGE_TAG}"
+            echo "========================================="
         }
         failure {
-            script {
-                if (env.BUILD_USER_EMAIL?.trim()) {
-                    mail to: "${env.BUILD_USER_EMAIL}",
-                         subject: "Build #${BUILD_NUMBER} FAILED",
-                         body: "Build failed. Check Jenkins console: ${BUILD_URL}"
-                } else {
-                    echo "BUILD_USER_EMAIL is empty, skipping failure email."
-                }
-            }
+            echo "========================================="
+            echo "BUILD #${BUILD_NUMBER} FAILED"
+            echo "Check console output: ${BUILD_URL}"
+            echo "========================================="
         }
         always {
             cleanWs()
