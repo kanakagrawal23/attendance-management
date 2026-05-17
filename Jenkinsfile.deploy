@@ -28,31 +28,34 @@ pipeline {
                     ]
                 ]) {
                     script {
-                        writeFile file: 'deploy.sh', text: """#!/bin/bash
+                        writeFile file: 'deploy.sh', text: '''
+#!/bin/bash
 set -e
 
-export AWS_ACCESS_KEY_ID='${env.AWS_ACCESS_KEY_ID}'
-export AWS_SECRET_ACCESS_KEY='${env.AWS_SECRET_ACCESS_KEY}'
-export AWS_DEFAULT_REGION='${env.AWS_REGION}'
-
 echo "Logging into ECR..."
-aws ecr get-login-password --region ${env.AWS_REGION} | docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 595365650066.dkr.ecr.ap-south-1.amazonaws.com
 
 echo "Pulling image..."
-docker pull ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
+docker pull 595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management:'"${BUILD_NUMBER_PARAM}"'
 
 echo "Stopping old container if exists..."
-docker stop ${env.CONTAINER} || true
-docker rm ${env.CONTAINER} || true
+docker stop attendance || true
+docker rm attendance || true
 
 echo "Running new container..."
-docker run -d --name ${env.CONTAINER} --restart unless-stopped -p 8081:8080 ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
+docker run -d --name attendance --restart unless-stopped -p 8081:8080 595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management:'"${BUILD_NUMBER_PARAM}"'
 
 echo "Deployment completed."
 docker ps
-"""
+'''
 
-                        bat """
+                        bat '''
+                            icacls "%PEM_FILE%" /inheritance:r
+                            icacls "%PEM_FILE%" /remove:g "BUILTIN\\Users"
+                            icacls "%PEM_FILE%" /remove:g "NT AUTHORITY\\Authenticated Users"
+                            icacls "%PEM_FILE%" /remove:g "Everyone"
+                            icacls "%PEM_FILE%" /grant:r "%USERNAME%:R"
+
                             ssh -o StrictHostKeyChecking=no -i "%PEM_FILE%" %EC2_USER%@%EC2_HOST% "mkdir -p /tmp/jenkins-deploy"
                             if errorlevel 1 exit /b 1
 
@@ -61,7 +64,7 @@ docker ps
 
                             ssh -o StrictHostKeyChecking=no -i "%PEM_FILE%" %EC2_USER%@%EC2_HOST% "chmod +x /tmp/jenkins-deploy/deploy.sh && bash /tmp/jenkins-deploy/deploy.sh"
                             if errorlevel 1 exit /b 1
-                        """
+                        '''
                     }
                 }
             }
