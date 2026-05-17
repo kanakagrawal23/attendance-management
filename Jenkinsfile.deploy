@@ -10,7 +10,7 @@ pipeline {
         AWS_REGION   = 'ap-south-1'
         ECR_REGISTRY = '595365650066.dkr.ecr.ap-south-1.amazonaws.com'
         ECR_REPO     = '595365650066.dkr.ecr.ap-south-1.amazonaws.com/attendance-management'
-        EC2_HOST     = '52.66.188.108'   // replace with the one EC2 you want
+        EC2_HOST     = '52.66.188.108'
         EC2_USER     = 'ec2-user'
         CONTAINER    = 'attendance'
     }
@@ -37,10 +37,18 @@ docker stop ${env.CONTAINER} || true
 docker rm ${env.CONTAINER} || true
 
 echo "Running new container..."
-docker run -d --name ${env.CONTAINER} --restart unless-stopped -p 8081:8080 ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
+docker run -d --name ${env.CONTAINER} --restart unless-stopped -p 8081:8081 ${env.ECR_REPO}:${params.BUILD_NUMBER_PARAM}
 
-echo "Deployment completed."
+echo "Waiting for application to start..."
+sleep 15
+
+echo "Checking container status..."
 docker ps
+
+echo "Testing application endpoint..."
+curl -f http://localhost:8081/attendance/status
+
+echo "Deployment completed successfully."
 """
                         bat '''
                             icacls "%PEM_FILE%" /inheritance:r
@@ -72,6 +80,7 @@ docker ps
             echo "Environment : ${params.ENVIRONMENT}"
             echo "EC2 Host    : ${env.EC2_HOST}"
             echo "Image Tag   : ${params.BUILD_NUMBER_PARAM}"
+            echo "App URL     : http://${env.EC2_HOST}:8081/attendance/status"
             echo "========================================="
         }
         failure {
